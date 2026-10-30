@@ -32,6 +32,7 @@ import {questionOutcome,questionReceipt,toolOutputImages} from './generic-tool-m
 import {SourceQuestionReceipt,notePendingQuestion} from './source-question-receipt.jsx';
 import {SourceToolImages} from './source-tool-images.jsx';
 import { isMediaItem, mediaItemRow } from './media-item-model.mjs';
+import { filePreviewUrl } from './file-preview-model.mjs';
 import {computerUseAction} from './computer-use-model.mjs';
 import {SourceComputerUseStep} from './source-computer-use.jsx';
 import { SourceMarkdownSelection } from './source-markdown-selection.jsx';
@@ -50,6 +51,8 @@ import { SourcePlanApprovalCard, planTargetOf, planAcceptOptions, PlanMoreOption
 import { useCardHotkeys } from './use-card-hotkeys.js';
 import "./source-plan-card.css";
 import { userMessageContent, shownUserItem } from "./composer-attachments-model.mjs";
+import { demonstrationOf } from "./watch-record-model.mjs";
+import { SourceWatchRecordMessage } from "./source-watch-record.jsx";
 import { WebLinkContext } from "./web-link-context.mjs";
 import { moveToIndex, useTabDragReorder } from "./use-tab-drag-reorder.mjs";
 import React, {
@@ -86,7 +89,7 @@ import { stableIds, tabOverflowLayout } from "./file-tab-overflow-model.mjs";
 import { SourceSessionFileViewer, FILE_VIEWER_LABELS } from "./source-file-viewer.jsx";
 import { CONTEXT_MENU_ALIGN_OFFSET, CONTEXT_MENU_SIDE_OFFSET } from "./menu-model.mjs";
 import { menuTriggerProps } from "./source-menu.jsx";
-import { SourceTaskEvent } from "./source-task-event.jsx";
+import { SourceTaskEvent, SourceTaskEventRow } from "./source-task-event.jsx";
 import { workflowTaskEvent } from "./task-event-model.mjs";
 import { useSourcePointerResize } from "./use-pointer-resize.js";
 import { SourcePaneControls, SourceFilesSearchButton } from "./source-pane-controls";
@@ -394,6 +397,8 @@ function SourceStep({
   meta,
   metaTitle,
   trailing,
+  media = null,
+  icon = null,
   caretSize = 12,
   classic = false,
   state = "done",
@@ -424,8 +429,8 @@ function SourceStep({
   const statusRows = useTurnStatusRows();
   if (statusRows) {
     const unknown = state === "unknown" ? <span className="shrink-0 text-muted">{STEP_OUTCOME_WORD.unknown}</span> : null;
-    return <StatusStep state={state} label={label} meta={meta} metaTitle={metaTitle || (typeof meta === "string" ? meta : undefined)}
-      trailing={unknown ? <>{trailing}{unknown}</> : trailing} actions={actions ?? undefined} actionsLabel={actions ? actionsLabel || t("Message actions") : undefined}
+    return <StatusStep state={state} label={label} icon={icon ?? undefined} meta={meta} metaTitle={metaTitle || (typeof meta === "string" ? meta : undefined)}
+      trailing={unknown ? <>{trailing}{unknown}</> : trailing} media={media ?? undefined} actions={actions ?? undefined} actionsLabel={actions ? actionsLabel || t("Message actions") : undefined}
       open={open} onOpenChange={next => { if (!forcedOpen && next !== open) toolRowExpansion.set(expansionKey, next); }}
       candidate={state === "busy" ? runningCandidate(item) : undefined} after={after}
       rest={{ "data-transcript-item-id": item.id, className: `source-message ${className}`.trim() }}>{children}</StatusStep>;
@@ -449,6 +454,7 @@ function SourceStep({
           if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); if (hasBody) toggle(); }
         }}
       >
+        {icon && <span className="inline-flex shrink-0 items-center me-2">{icon}</span>}
         <span
           className={`source-step-label ${state === "busy" ? "source-shimmer" : ""}`}
         >
@@ -460,6 +466,7 @@ function SourceStep({
           </span>
         )}
         {trailing}
+        {media}
         {STEP_OUTCOME_WORD[state] && !(classic && state === "failed") && (
           <span className="source-step-outcome">{STEP_OUTCOME_WORD[state]}</span>
         )}
@@ -527,7 +534,7 @@ function Diff({ value = "", scopeKey, ...props }) {
 const IMAGE_URL = /^(?:https?:|data:image\/)/i;
 function attachmentSource(part) {
   if (typeof part.path === "string" && part.path.startsWith("/"))
-    return encodeURI(`file://${part.path}`);
+    return filePreviewUrl(part.path);
   const url = part.imageUrl || part.url || part.image_url;
   return typeof url === "string" && IMAGE_URL.test(url) ? url : null;
 }
@@ -596,7 +603,8 @@ export function scheduledLabel(firedAt, now = Date.now()) {
 
 // A finished dynamic workflow's notification to the model (Claude Code's <task-notification>), shown as Claude's
 // task-event row (source-task-event.jsx): 'Background workflow completed · {name} · took {elapsed}', which focuses
-// the run in the Background tasks pane.
+// the run in the Background tasks pane. Each notice is its own transcript row (SourceTaskEventRow), so it keeps the
+// row gap from the row above it.
 function SourceWorkflowNotice({ item, onOpen = null }) {
   const notice = item.workflowNotification;
   // A workflow agent's blocking question (the main agent answers it) and a run waiting on its model provider: rows of
@@ -604,28 +612,41 @@ function SourceWorkflowNotice({ item, onOpen = null }) {
   if (notice?.kind === "escalation") {
     const label = notice.agent && notice.workflow ? t("{agent} in {workflow} has a question", { agent: notice.agent, workflow: notice.workflow })
       : notice.agent ? t("{agent} has a question", { agent: notice.agent }) : notice.workflow ? t("An agent in {workflow} has a question", { workflow: notice.workflow }) : t("A workflow agent has a question");
-    return <details className="source-task-event source-workflow-question" data-transcript-item-id={item.id} data-task-event-status="question">
+    return <SourceTaskEventRow><details className="source-task-event source-workflow-question" data-transcript-item-id={item.id} data-task-event-status="question">
       <summary className="stev-line"><span className="stev-label">{label}</span></summary>
       {notice.question && <p className="stev-question">{notice.question}</p>}
       {notice.context && <p className="stev-context">{notice.context}</p>}
-    </details>;
+    </details></SourceTaskEventRow>;
   }
   if (notice?.kind === "settings") {
-    return <div className="source-task-event" data-transcript-item-id={item.id} data-task-event-status="settings">
+    return <SourceTaskEventRow><div className="source-task-event" data-transcript-item-id={item.id} data-task-event-status="settings">
       <span className="stev-line"><span className="stev-label">{t("Changed the workflow’s settings")}</span>{notice.workflow && <span className="stev-description"><bdi>{`· ${notice.workflow}`}</bdi></span>}</span>
-    </div>;
+    </div></SourceTaskEventRow>;
   }
   if (notice?.kind === "stall") {
     const waited = Number.isFinite(notice.stalledMs) ? formatDuration(Math.round(notice.stalledMs / 1000)) : null;
     const label = notice.workflow ? t("{workflow} is waiting for the model provider", { workflow: notice.workflow }) : t("A workflow is waiting for the model provider");
-    return <div className="source-task-event" data-transcript-item-id={item.id} data-task-event-status="stalled">
+    return <SourceTaskEventRow><div className="source-task-event" data-transcript-item-id={item.id} data-task-event-status="stalled">
       <span className="stev-line"><span className="stev-label">{label}</span>{waited && <span className="stev-elapsed">{`· ${t("no reply for {duration}", { duration: waited })}`}</span>}</span>
-    </div>;
+    </div></SourceTaskEventRow>;
   }
   const event = workflowTaskEvent(notice);
   // A Monitor event (no status): the model reads it; the transcript shows no row, as Claude's.
   if (!event) return null;
   return <SourceTaskEvent events={[event]} itemId={item.id} onOpen={onOpen ? () => onOpen(event) : null} />;
+}
+// The optimistic send's footnote: 'Sending…', or 'Not delivered · {time}' with Retry / Discard (pending-send-model.mjs).
+function SourceUserDelivery({ delivery }) {
+  return <>
+      {delivery?.status === "sending" && <div className="source-user-delivery" data-find-omitted="">
+        <span role="status" className="source-user-delivery-status">{t("Sending…")}</span>
+      </div>}
+      {delivery?.status === "failed" && <div className="source-user-failed-send" data-testid="epitaxy-failed-send" data-find-omitted="">
+        <span className="source-user-failed-note" role="alert"><Icon name="Warning" size={12} aria-hidden="true" />{notDeliveredLabel(delivery.sentAt)}</span>
+        {delivery.onRetry && <SourceSettingsButton variant="ghost" data-step="1" className="source-user-failed-button" onMouseDown={(event) => event.preventDefault()} onClick={delivery.onRetry}>{t("Retry")}</SourceSettingsButton>}
+        {delivery.onDiscard && <SourceSettingsButton variant="ghost" data-step="1" className="source-user-failed-button" onMouseDown={(event) => event.preventDefault()} onClick={delivery.onDiscard}>{t("Discard")}</SourceSettingsButton>}
+      </div>}
+  </>;
 }
 function SourceUserMessage({ item, turnStart, sessionKey, cwd = null, onOpenFileRef = null, agentNested = false, turnStartedAtMs = null, userActions = null }) {
   // The attachment note a core without file mentions gets ("[Attached file: P]", live or joined into Codex history)
@@ -693,14 +714,7 @@ function SourceUserMessage({ item, turnStart, sessionKey, cwd = null, onOpenFile
       </div>
       {/* Codex has one startedAt per turn: only the user row that opens its turn
           shows it; a steer added mid-turn gets no time (no per-message timestamp). */}
-      {delivery?.status === "sending" && <div className="source-user-delivery" data-find-omitted="">
-        <span role="status" className="source-user-delivery-status">{t("Sending…")}</span>
-      </div>}
-      {delivery?.status === "failed" && <div className="source-user-failed-send" data-testid="epitaxy-failed-send" data-find-omitted="">
-        <span className="source-user-failed-note" role="alert"><Icon name="Warning" size={12} aria-hidden="true" />{notDeliveredLabel(delivery.sentAt)}</span>
-        {delivery.onRetry && <SourceSettingsButton variant="ghost" data-step="1" className="source-user-failed-button" onMouseDown={(event) => event.preventDefault()} onClick={delivery.onRetry}>{t("Retry")}</SourceSettingsButton>}
-        {delivery.onDiscard && <SourceSettingsButton variant="ghost" data-step="1" className="source-user-failed-button" onMouseDown={(event) => event.preventDefault()} onClick={delivery.onDiscard}>{t("Discard")}</SourceSettingsButton>}
-      </div>}
+      <SourceUserDelivery delivery={delivery} />
       {text && !agentNested && !delivery && <SourceUserActions sessionKey={sessionKey} itemId={item.id} text={text} interacted={interacted}
         startedAtMs={turnStart ? turnStartedAtMs : null} rewind={userActions?.rewind ?? null} onFork={userActions?.fork ?? null} />}
     </article>
@@ -817,6 +831,9 @@ export function SourceMessage({ isInterrupting = false, item, agentContext = nul
       onOpenFileRef={onOpenFileRef} onOpenChanges={onOpenChanges} transcriptView={transcriptView} pendingApprovalItemIds={pendingApprovalItemIds} />} />;
 
   if (item.type === "userMessage") {
+    // A recorded demonstration (watch-record) is its own card, "Recorded demonstration · N.Ns" (official cc1aae219 bO).
+    const demonstration = demonstrationOf(item);
+    if (demonstration) return <SourceWatchRecordMessage parsed={demonstration} itemId={item.id} footer={<SourceUserDelivery delivery={item.localDelivery ?? null} />} />;
     // Hidden workflow reminders never show as the user's words; a finished workflow's notification turn (the model's
     // Workflow tool, workflow-tool-service.cjs) is a system notice (composer-attachments-model shownUserItem).
     const shown = shownUserItem(item);
@@ -889,7 +906,7 @@ export function SourceMessage({ isInterrupting = false, item, agentContext = nul
   }
   // Computer use (computer-use-model.mjs): the bridges' computerUse items and computer tools in any known shape.
   if (computerUseAction(item))
-    return <SourceComputerUseStep item={item} state={commandRowState(item, pendingApprovalItemIds.has(item.id))} Step={SourceStep} stepProps={stepDefaults} inToolGroup={inToolGroup} />;
+    return <SourceComputerUseStep item={item} state={commandRowState(item, pendingApprovalItemIds.has(item.id))} Step={SourceStep} stepProps={stepDefaults} />;
   // `present` (the DeepSeek core's deliverables): file cards instead of a tool row.
   // mark_chapter (OpenClaude Desktop's agent tools): the chapter heading, lifted out of the tool rows (cd5a31703 d2);
   // wX/CX (source-chapters.jsx): hidden or renamed from the Session chapters rail, renamed in place on double-click.
