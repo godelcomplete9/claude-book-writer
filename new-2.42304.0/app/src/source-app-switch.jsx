@@ -13,9 +13,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CdsDensityContext, CdsTooltipProvider } from './generated/view-tabs/shared-frame-BfjMqbuN.js';
 import { DirectionContext, clsx } from './generated/view-tabs/vendor-frame-DfPJ1QmD.js';
-import { AppSwitch, appSwitchShortcutHint, useAppSwitchSize } from './generated/app-switch/app-switch.mjs';
+import { AppSwitch, AppSwitchDot, appSwitchDotMessages, appSwitchMessages, appSwitchShortcutHint, useAppSwitchSize } from './generated/app-switch/app-switch.mjs';
+import { AppSwitchFrame, syncInfiniteAnimations } from './generated/app-switch/app-switch-frame.mjs';
+import { CdsSegmentedControl } from './generated/view-tabs/shared-frame-BfjMqbuN.js';
 import { staticComposerBootFade } from './generated/app-switch/boot-fade.mjs';
 import { useIntl } from './source-app-switch-adapters.jsx';
+import { t } from '../electron/i18n/index.mjs';
 import { appSwitchProps, createAppSwitchPress, surfaceChordMatcher, surfaceChordTarget } from './app-switch-model.mjs';
 
 // DN: je = O("draggable-none", _c, d && "flex", d && L !== "web" && "-mt-[12px]") on the desktop (d) with the web
@@ -66,7 +69,10 @@ function useSurfaceChord({ enabled, homeMode, current, rtl, onChord }) {
 }
 
 // vC: the props of the original segment builder _C. `onMode` is main.jsx switchMode (it keeps the `sending` guard).
-function AppSwitchContainer({ mode, homeMode, onMode, chord, attention, rtl }) {
+// R5-books: the Books segment (Book icon) joins the same CdsSegmentedControl when
+// the host passes `books` — same control, same styling, no second nav style.
+// Default off, so the untouched host keeps the pinned original two segments.
+function AppSwitchContainer({ mode, homeMode, onMode, chord, attention, rtl, books = false }) {
   const intl = useIntl();
   const [pressed, setPressed] = useState(null);
   const press = useMemo(() => createAppSwitchPress({ setPressed }), []);
@@ -77,16 +83,32 @@ function AppSwitchContainer({ mode, homeMode, onMode, chord, attention, rtl }) {
   const homeName = intl.formatMessage({ defaultMessage: 'Claude', id: '4PjoX4rZSt' });
   const { selected, home, code } = appSwitchProps({ mode, pressed, homeMode, homeName, chord, rtl, attention, shortcutHint: appSwitchShortcutHint });
   const onChange = useCallback(value => { press(value, onMode); }, [press, onMode]);
+  if (books) {
+    // Same segment construction as the original _C (app-switch.mjs): chord hints and activity dots ride along.
+    const fmt = (name, dot) => (dot ? intl.formatMessage(appSwitchDotMessages[dot], { tab: name }) : name);
+    const indicator = (value, dot) => (dot ? <AppSwitchDot mode={value} attention={dot} /> : undefined);
+    return <AppSwitchFrame data-compact-mode-switcher={true} data-chorus-callout="pills" className="flex"
+      modes={[homeMode, 'code', 'books']} onAnimationStart={syncInfiniteAnimations}>
+      <CdsSegmentedControl segments={[
+        { value: homeMode, icon: 'Chats', tooltip: fmt(homeName, home.dot), indicator: indicator(homeMode, home.dot), shortcut: home.shortcut },
+        code.disabledReason === undefined
+          ? { value: 'code', icon: 'Code', tooltip: fmt(code.name, code.dot), indicator: indicator('code', code.dot), shortcut: code.shortcut }
+          : { value: 'code', icon: 'Code', tooltip: code.name, disabled: true, disabledReason: code.disabledReason },
+        { value: 'books', icon: 'Book', tooltip: t('Books') },
+      ]} value={pressed ?? mode} onChange={onChange} size={size} tooltipSide="bottom"
+        aria-label={intl.formatMessage(appSwitchMessages.label)} />
+    </AppSwitchFrame>;
+  }
   return <AppSwitch data-compact-mode-switcher={true} data-chorus-callout="pills" className="flex"
     homeMode={homeMode} selected={selected} onChange={onChange} size={size} home={home} code={code} />;
 }
 
 // placement "titlebar" (DN `G`, the open sidebar) or "peek" (DN `ae`, the collapsed sidebar's peek card).
-export function SourceAppSwitch({ mode = 'code', homeMode = 'cowork', onMode, chord = false, attention, density = 'compact', direction, placement = 'titlebar' }) {
+export function SourceAppSwitch({ mode = 'code', homeMode = 'cowork', onMode, chord = false, attention, density = 'compact', direction, placement = 'titlebar', books = false }) {
   const rootDirection = useSyncExternalStore(observeDirection, directionSnapshot, serverDirection);
   const resolved = direction ?? rootDirection;
   const context = useMemo(() => ({ direction: resolved }), [resolved]);
-  const container = <AppSwitchContainer mode={mode} homeMode={homeMode} onMode={onMode} chord={chord} attention={attention} rtl={resolved === 'rtl'} />;
+  const container = <AppSwitchContainer mode={mode} homeMode={homeMode} onMode={onMode} chord={chord} attention={attention} rtl={resolved === 'rtl'} books={books} />;
   // The desktop frame's CDS density is compact (shared-78 fW), so uC sizes the control "lg".
   return <DirectionContext value={context}><CdsDensityContext value={density}>
     {placement === 'peek' ? <div className={appSwitchPeekClassName}>{container}</div>

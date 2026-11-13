@@ -280,6 +280,8 @@ import { CdsRoot } from "./generated/view-tabs/shared-frame-BfjMqbuN.js";
 // R4i-graph GR2 (Y1-R3-graph-1): the app root's CDS labels (shared-23 UG passes CdsRoot `labels: Ev()`); see cds-labels.mjs.
 import { CdsLabelsContext } from "./generated/view-tabs/shared-frame-BfjMqbuN.js";
 import { cdsLabels } from "./cds-labels.mjs";
+// R5-books: the Books surface (hybrid drafting: Structure Layer + Jev voice layer).
+import { BooksSection } from "./components/Books/BooksSection.jsx";
 // R4i-graph fix: the Chat graphs (2.2553.1 chat / 2.31226.0 current-chat shared-frame) each hold their own labels
 // context (Ft / mn, read by their Z the way view-tabs Z reads vn; nothing in those graphs provides it), so the root
 // gives each the same host labels.
@@ -5196,6 +5198,13 @@ function App({ side = 0, initialSession = null }) {
   }
   async function switchMode(next) {
     if (!validSurface(next) || next === modeRef.current || sending) return;
+    // R5-books: the Books surface is host-local — no core workspace fetch, no
+    // persisted core preference. Navigation only.
+    if (next === 'books') {
+      setWorktree(false);
+      navigate(null, { surface: 'books' });
+      return;
+    }
     const request = ++surfaceNavigation.current;
     surfaceFolders.current[modeRef.current] = current ? surfaceFolders.current[modeRef.current] || cwd : cwd;
     try {
@@ -6900,7 +6909,7 @@ function App({ side = 0, initialSession = null }) {
                 (Ey band padding while docked) and, last, the docked column (bH). */}
             <SessionRailRow rail={sessionRail} host={sessionRailHost}>
           <div className={`conversation ${!current && mode !== 'code' && section === 'new' ? homeScrollClass : ''} ${sessionRail.bandClassName}`}>
-            {section === "new" && mode === 'cowork' && boot?.coworkEnabled !== true ? <SourceCoworkComingSoon onMode={switchMode} /> : section === "new" ? (
+            {mode === 'books' ? <BooksSection call={call} /> : section === "new" && mode === 'cowork' && boot?.coworkEnabled !== true ? <SourceCoworkComingSoon onMode={switchMode} /> : section === "new" ? (
               <SourceSurfaceHome active={!current && mode !== 'code'}>
                 {/* R4f-error E36: the chat panel's load error boundary (c11959232 Nm / Pm, c5638815a lt: RenderErrorBoundary with
                     cc43287c9 fV), one fixed place for a session and the draft alike (source-session-error-boundary.jsx). */}

@@ -1690,7 +1690,7 @@ export function SourceSidebar({
       {/* R2-appswitch (D11): 2.42304.0 shared-22 DN ends the macOS titlebar with the compact switch
           (shared-21 vC -> _C -> shared-18 df-app-switch -> CDS SegmentedControl); see source-app-switch.jsx. It
           moves into the peek card while collapsed (W2), and `chord` binds ⌥⌘←/→ with its tooltip hint (W3, AM). */}
-      {!collapsed && <SourceAppSwitch mode={mode} homeMode={lastChatSurface.current} onMode={onMode} chord />}
+      {!collapsed && <SourceAppSwitch mode={mode} homeMode={lastChatSurface.current} onMode={onMode} chord books />}
     </div>
     {/* sidebar-main.js:14903-14909: while collapsed, the bridge spans the gap between the 'Show sidebar'
         trigger and the floating body so the pointer can cross it (pointer events only while peeking). */}
@@ -1700,7 +1700,7 @@ export function SourceSidebar({
     <div className="dframe-sidebar-body" data-testid="sidebar" id="frame-peek-popover" data-focus-region={collapsed ? "navigation" : undefined} data-focus-region-holds={collapsed ? "contains" : undefined} inert={collapsed && !peekOpen ? true : undefined}
       onPointerEnter={collapsed ? onPeekEnter : undefined} onPointerLeave={collapsed ? onPeekLeave : undefined}>
       {/* R2-appswitch W2: shared-22 DN `ae` puts the same switch at the top of the peek card while collapsed. */}
-      {collapsed && <SourceAppSwitch placement="peek" mode={mode} homeMode={lastChatSurface.current} onMode={onMode} chord />}
+      {collapsed && <SourceAppSwitch placement="peek" mode={mode} homeMode={lastChatSurface.current} onMode={onMode} chord books />}
       <div className="source-sidebar-header">
       {mode === 'code' ? <SidebarSearchContext.Provider value={{open: entry => setShowSearch?.(entry), shortcut: 'cmd+k'}}>
         <SidebarSearchField/>

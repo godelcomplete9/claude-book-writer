@@ -1,6 +1,7 @@
 // Desktop product surfaces are independent of a core's permission modes.
 // Old sessions without a surface belong to Code; never reclassify their history.
-export const SURFACES = Object.freeze(['chat', 'cowork', 'code']);
+// 'books' is a host-local surface (no core session, no workspace fetch).
+export const SURFACES = Object.freeze(['chat', 'cowork', 'code', 'books']);
 export const validSurface = value => SURFACES.includes(value);
 export const sessionSurface = (id, metadata = {}) => validSurface(metadata?.[id]?.surface) ? metadata[id].surface : 'code';
 export const surfaceDraftKey = (surface = 'code', side = 0) => `${surface === 'code' ? 'epitaxy' : surface}-draft${side ? '-split' : ''}`;

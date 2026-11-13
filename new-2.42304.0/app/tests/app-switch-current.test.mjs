@@ -250,16 +250,19 @@ test('SSR: the sidebar titlebar ends with the original switch; the hand-written 
     assert.ok(toolbar.length > 0, mode);
     assert.ok(toolbar.indexOf('class="source-nav-buttons"') < toolbar.indexOf(`class="${Host.appSwitchTitlebarClassName}"`), mode);
     const switchHtml = toolbar.slice(toolbar.indexOf(`class="${Host.appSwitchTitlebarClassName}"`));
-    const [home, code] = radios(switchHtml);
+    // R5-books: the host adds a third Books segment to the same control.
+    const [home, code, booksRadio] = radios(switchHtml);
     assert.equal(attr(mode === 'code' ? code : home, 'aria-checked'), 'true', mode);
+    assert.equal(attr(booksRadio, 'aria-label'), 'Books', mode);
     assert.equal(attr(hiddenInputs(switchHtml)[0], 'value'), mode === 'code' ? 'cowork' : mode);
+    assert.equal(hiddenInputs(switchHtml).map(i => attr(i, 'value')).at(-1), 'books', mode);
     assert.doesNotMatch(html, /class="mode-switch"|<button role="radio"/);
     assert.doesNotMatch(switchHtml.slice(0, switchHtml.indexOf('</div></div></div>')), /\s(?:disabled|data-disabled|aria-disabled)="/);
   }
   const source = fs.readFileSync(path.join(app, 'src/source-sidebar.jsx'), 'utf8');
-  // W2/W3: the titlebar instance while open, the peek instance while collapsed; both bind the chord.
-  assert.match(source, /\{!collapsed && <SourceAppSwitch mode=\{mode\} homeMode=\{lastChatSurface\.current\} onMode=\{onMode\} chord \/>\}/);
-  assert.match(source, /\{collapsed && <SourceAppSwitch placement="peek" mode=\{mode\} homeMode=\{lastChatSurface\.current\} onMode=\{onMode\} chord \/>\}/);
+  // W2/W3: the titlebar instance while open, the peek instance while collapsed; both bind the chord and add the Books segment.
+  assert.match(source, /\{!collapsed && <SourceAppSwitch mode=\{mode\} homeMode=\{lastChatSurface\.current\} onMode=\{onMode\} chord books \/>\}/);
+  assert.match(source, /\{collapsed && <SourceAppSwitch placement="peek" mode=\{mode\} homeMode=\{lastChatSurface\.current\} onMode=\{onMode\} chord books \/>\}/);
   assert.equal((source.match(/<SourceAppSwitch /g) || []).length, 2);
   assert.doesNotMatch(source, /modeBusy|className="mode-switch"/);
   // main.jsx keeps the sending guard in switchMode and no longer passes a busy flag to the switch.
@@ -403,8 +406,9 @@ test('W2 SSR: collapsed, the switch opens the peek card body (df-peek-mode-switc
       + '<div data-compact-mode-switcher="true" data-chorus-callout="pills" class="df-app-switch flex">'), body.slice(open.length, open.length + 200));
     assert.equal(Host.appSwitchPeekClassName, 'df-peek-mode-switch mb-2 flex shrink-0');
     assert.ok(body.indexOf('df-peek-mode-switch') < body.indexOf('class="source-sidebar-header"'));
-    const [home, code] = radios(body);
+    const [home, code, booksRadio] = radios(body);
     assert.deepEqual([attr(home, 'aria-checked'), attr(code, 'aria-checked')], ['false', 'true']);
+    assert.equal(attr(booksRadio, 'aria-label'), 'Books');
     // The same container (vC) with the chord bound: the home segment advertises ⌥⌘← (server snapshot: not a Mac).
     assert.match(attr(home, 'aria-keyshortcuts'), /^(Meta|Control)\+Alt\+ArrowLeft$/);
     assert.equal(attr(code, 'aria-keyshortcuts'), undefined);
@@ -417,8 +421,9 @@ test('W2 SSR: collapsed, the switch opens the peek card body (df-peek-mode-switc
   assert.match(attr(radios(titlebar)[0], 'aria-keyshortcuts'), /^(Meta|Control)\+Alt\+ArrowLeft$/);
   // Cowork mode: the chord hint points at Code (⌥⌘→) instead.
   const cowork = render({ collapsed: true, peekOpen: true, mode: 'cowork' });
-  const [home, code] = radios(cowork.slice(cowork.indexOf('df-peek-mode-switch')));
+  const [home, code, booksRadio] = radios(cowork.slice(cowork.indexOf('df-peek-mode-switch')));
   assert.deepEqual([attr(home, 'aria-checked'), attr(home, 'aria-keyshortcuts')], ['true', undefined]);
+  assert.equal(attr(booksRadio, 'aria-label'), 'Books');
   assert.match(attr(code, 'aria-keyshortcuts'), /^(Meta|Control)\+Alt\+ArrowRight$/);
 });
 

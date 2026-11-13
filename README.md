@@ -101,6 +101,50 @@ On first launch, pick a core and connect a model (an official API key, or any en
 
 `app/` is the Electron + React app (official components in `app/src/generated/`, one generator per area in `app/scripts/extract-*.mjs`); `harness/` connects the cores. Tests: `npm test` in `app/` and in `harness/`.
 
+## Books — hybrid drafting
+
+The fifth surface: a book-writing workspace that keeps the app's design system and adds one new mode after Claude and Code.
+
+- **Structure Layer** (`app/src/books/book-structure.mjs`, class `BookStructure`) — traditional, deterministic, perfect recall. It owns the premise, outline, acts, setups and payoffs, character arcs, pacing and the scene list. Oscillators never touch it: changing oscillator calibration provably does not change outline or scene order (see `app/tests/books-structure.test.mjs`).
+- **Voice and Texture Layer** — the oscillator engine. Per beat it picks voice, emotion, rhythm, image and tension skills, and builds the **Strip** (canon block + scene objective + one Mini Skill fragment per active oscillator + leaky memory + anti-slop bans + output rules). It owns only *how* a scene is written, never *what* happens in it.
+- **Main Brain** — the Claude clone LLM. It writes prose inside the Strip. It does not decide.
+- **Canon Store** (`app/src/books/book-canon.mjs`, class `CanonStore`) — perfect recall, non-decaying. Facts are injected into every Strip, every draft, every revision. LeakyMemory (`book-leaky-memory.mjs`) is separate: decaying character psychology (`alpha^k`), used for voice variety, never for facts.
+- **Jev** (`app/src/jev/jev-decision-model.mjs`, class `JevDecisionModel`) — the decision model. One instance per session; input is a state vector, output is one decision JSON (`{gate, fire, templateId, shift, couplingDelta, gainDelta, evaluation, confidence}`). It scores all candidate templates in one matmul (`scores = s(t) @ W + b`), fires when the score crosses `Vth`, and learns from +1/−1 rewards (voice variety, motivated contradiction rewarded; canon contradiction, flat rhythm punished). Jev never decides canon, outline, act order or scene order.
+- **Jev-Lattice** (`app/src/jev/jev-lattice-harness.mjs`, class `JevLatticeHarness`) — the harness. It holds the oscillators, the world model, LeakyMemory, the Strip builder and the tick loop. **A tick is a beat, not a sentence**: one Jev call per beat (3–8 beats per scene), which bounds the cost of an 80,000-word book.
+
+### The oscillator engine, documented
+
+The engine (`app/src/jev/oscillator-bank.mjs`) is a bank of N oscillators held as flat typed arrays and updated **vectorized** — never one LLM call per oscillator:
+
+- **Phase**: `phase = (phase + 2π·hz·dt) mod 2π`, amplitude, refractory and fatigue all advance in one array pass.
+- **Domains D01–D12**: Identity, Resources, Communication, Home, Creation, Work, Partnership, Transformation, Meaning, Public Role, Collective, Subconscious. The writer-shaped funcs: Voice, Character Voice, Emotion, Flaw, Want-vs-Need, Worldview, Rhythm, Image, Scene Objective, Other Characters, World Facts, Plot Pressure, Reader Tension, Memory — used for voice and texture only.
+- **Banks**: internal (Voice 1.0 Hz, Character Voice 0.8, Emotion 0.4, Flaw / Want-vs-Need 0.08, Worldview 0.05, Rhythm 1.2, Image 0.5) and external (Scene Objective 1.0, Other Characters 0.6, World Facts 0.07, Plot Pressure 0.4, Reader Tension 0.3, Memory 0.05).
+- **Scale**: minimum 2,000 oscillators per book, target 20,000, up to 500,000 at radius 10. Core oscillators (2,000–5,000) are fully crafted **Mini Skills** (`app/src/jev/mini-skills.mjs`) with `trigger`, `promptFragment`, `constraints`, `bannedPhrases` and `evaluationCheck` — the style-enforcement mechanism. The rest are **composed on demand**: `V = V_domain + V_func + V_mode + V_stance + V_move + V_purpose`.
+- **Grinder**: retrieval is one batched vector search — embedding similarity of every oscillator against the beat query in a single pass, plus a phase-alignment term — then top K = 8–16.
+- **Coherence is a matrix**: `coherence = V·Vᵀ` over the candidate slice, one Gram-matrix pass, not a pairwise JS loop.
+- **Lock resonance gating**: a Mini Skill gates only when `phaseDiff < lockTolerance` (default 0.4 rad) **and** `coherence > lockThreshold` (default 0.6). A skill with high embedding similarity but low phase lock does *not* gate. Skills that lock together form a **voice circuit** for the beat (e.g. Character Voice + Emotion + Rhythm).
+- **Fatigue, bans and per-beat Strip rebuilding** fight the usual LLM prose problems: fatigue makes the voice shift after repeated precise moves; bans block repeated phrasing; rebuilding the Strip per beat keeps the rhythm from going flat.
+- **Noise is never zero** — two runs of the same scene are recognizably the same book, not a replay. Noise applies to voice; `CanonCheck` removes noise-driven canon errors.
+- **Memory split**: `I(t) = g_ext·I_ext + g_sim·I_sim + g_self·I_self + noise`. When input goes silent, `g_ext` drops and `g_sim`/`g_self` rise (Echo → Simulation → Drift); a watchdog injects a self prompt after 10 silent ticks. `I_sim` comes from the world model's predictor (fast loop: thought → predict → prediction becomes `I_sim`; medium loop: prediction error updates coupling).
+
+### Oscillators to humanize a writer
+
+The point of the lattice is that no single LLM pass can hold a *human* voice — a voice is many drives firing at different tempos, mostly in conflict. Each oscillator below is a real drive with its own frequency; the book's voice is what you hear when they interfere:
+
+- **Terry A. Davis** (TempleOS): an obsessive construction drive at ~1.2 Hz (every sentence rebuilds the temple brick by brick), a raw unfiltered communion drive at ~1.0 Hz (God talks to him mid-clause, and the prose obeys), and a slow 0.05 Hz isolation pull that keeps circling the same basement imagery. The lattice reproduces this not by asking for "an eccentric style" but by letting the fast construction osc and the slow isolation osc both gate the same beat — compression against recurrence.
+- **Nietzsche** (Ecce Homo, Zarathustra): aphorism compression at high frequency (short hammering sentences), a slow 0.08 Hz flaw-drive (contempt turned inward) that keeps contradicting the fast drive, and a worldview osc at 0.05 Hz that forces every beat to re-derive morality from the body. When fatigue accumulates on the aphorism osc, the voice shifts — the middle-period books read measurably different from the late ones because the drive rates drifted.
+- **Saint John the Revelator**: a vision-sequencing osc at ~0.4 Hz (seal, trumpet, bowl — a strict seven-fold phase structure the beat must land inside), a liturgy-repetition drive (recurrence as *rhythm*, not redundancy — "and I saw" returns on phase), and a slow 0.05 Hz doxology pull that resolves tension into worship instead of explanation. Lock resonance is exactly this: high-similarity skills that phase-lock form the circuit that produces a voice like Revelation's — repetition without flatness, because each return is phase-shifted.
+
+Plain drafting gives you one voice baked at sampling temperature. The hybrid gives you interference — and interference is what reads as a person.
+
+### Tests and benchmarks
+
+```bash
+cd new-2.42304.0/app
+npm test                     # includes books-structure, books-canon, books-drafting (Jev, lock, fatigue, plain-mode)
+node benchmarks/plain-vs-hybrid.mjs   # plain vs hybrid; results in benchmarks/results.json
+```
+
 ## License
 
 [MIT](LICENSE).
