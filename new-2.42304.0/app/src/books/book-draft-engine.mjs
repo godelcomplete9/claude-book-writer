@@ -26,6 +26,7 @@ export class BookDraftEngine {
   constructor({
     structure, canon, leakyMemory, harness, editor, mainBrain,
     hybrid = true, maxRevisionPasses = 2,
+    plugins = [], rollingMemory = null, // pipeline plugins: extra Mini Skills + RollingMemory
   }) {
     this.structure = structure;         // BookStructure
     this.canon = canon;                 // CanonStore
@@ -34,6 +35,13 @@ export class BookDraftEngine {
     this.editor = editor ?? new BookEditor({ bookId: structure.id });
     this.mainBrain = mainBrain;         // (strip, ctx) => prose text
     this.hybrid = hybrid;               // toggle off -> plain pipeline
+    this.plugins = plugins;             // pipeline skill set (craftPipelineSkills output)
+    this.rollingMemory = rollingMemory; // RollingMemory (pipeline-memory.mjs)
+    if (this.hybrid && this.harness && this.plugins.length) {
+      // Plugin skills join the same bank: they gate via Jev like core skills.
+      const known = new Set(this.harness.skills.map(s => s.id));
+      this.harness.skills.push(...this.plugins.filter(s => !known.has(s.id)));
+    }
     this.revisionQueue = new RevisionQueue({ maxPasses: maxRevisionPasses });
     this.jevCalls = 0;                  // proof log: one call per beat
     this.beatLog = [];
@@ -55,6 +63,11 @@ export class BookDraftEngine {
     const canonBlock = this.canon.renderBlock(canonFacts);
 
     let strip, decision = null;
+    // Rolling memory block: the rolling summary of what just happened plus
+    // related past scenes, injected into the Strip in both modes.
+    const memoryBlock = this.rollingMemory
+      ? this.rollingMemory.blockFor({ characters: scene.who ?? [], queryText: `${scene.objective} ${beatGoal}` })
+      : null;
     if (this.hybrid) {
       // Voice Layer: ONE Jev call for this beat, then the Strip.
       const result = this.harness.tick({
@@ -83,14 +96,20 @@ export class BookDraftEngine {
       // Plain pipeline: no Jev, no oscillator, no voice layer.
       strip = [canonBlock, `SCENE OBJECTIVE: ${scene.objective}`, `BEAT GOAL: ${beatGoal}`].join('\n\n');
     }
+    if (memoryBlock) strip = `${strip}\n\n${memoryBlock}`;
 
     // Main Brain drafts inside the Strip.
     const draft = this.mainBrain(strip, { sceneId: scene.id, beatIndex, decision });
 
     // Evaluation checks: per-skill evaluationCheck + CanonCheck + StyleCheck.
-    const activeSkills = this.hybrid && this.harness.activeCircuit.length
-      ? this.harness.skills.filter(s => this.harness.activeCircuit.includes(s.id))
-      : [];
+    // Plugin skills are always enforced (their bannedPhrases/constraints),
+    // on top of the active voice circuit in hybrid mode.
+    const activeSkills = [
+      ...(this.hybrid && this.harness.activeCircuit.length
+        ? this.harness.skills.filter(s => this.harness.activeCircuit.includes(s.id))
+        : []),
+      ...this.plugins,
+    ];
     const checks = runChecks(draft, { canon: this.canon, structure: this.structure, activeSkills });
 
     const beat = { sceneId: scene.id, chapterId: scene.chapterId, beatIndex, draft, checks, strip, decision, hybrid: this.hybrid };

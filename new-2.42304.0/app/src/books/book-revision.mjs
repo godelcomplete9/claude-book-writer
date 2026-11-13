@@ -26,8 +26,45 @@ export function styleCheck(text, activeSkills = []) {
       }
     }
   }
-  // rhythm variety: sentence lengths must not all sit in one band
+  // Pipeline plugin constraints: em-dash density, same-start runs, same-length
+  // runs, concreteness (additive; core skills carry none of these keys).
   const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  for (const s of activeSkills) {
+    const c = s.constraints ?? {};
+    const wordCount = (text.match(/[A-Za-z0-9']+/g) ?? []).length || 1;
+    if (c.maxEmDashPer500 !== undefined) {
+      const per500 = ((text.match(/—|\s--\s/g) ?? []).length / wordCount) * 500;
+      if (per500 > c.maxEmDashPer500) problems.push({ type: 'constraint', detail: `em-dash density ${per500.toFixed(2)} > ${c.maxEmDashPer500} per 500 words` });
+    }
+    if (c.maxSameStartRun !== undefined) {
+      let run = 1, worst = 1, w = '', worstWord = '';
+      for (const sentence of sentences) {
+        const first = (sentence.match(/[A-Za-z0-9']+/g) ?? [''])[0].toLowerCase();
+        if (first === w) { run++; if (run > worst) { worst = run; worstWord = first; } } else { run = 1; w = first; }
+      }
+      if (worst > c.maxSameStartRun) problems.push({ type: 'constraint', detail: `${worst} sentences starting with "${worstWord}"` });
+    }
+    if (c.noSameLengthRun !== undefined) {
+      let run = 1;
+      const lens = sentences.map(x => (x.match(/[A-Za-z0-9']+/g) ?? []).length);
+      for (let i = 1; i < lens.length; i++) {
+        run = lens[i] === lens[i - 1] ? run + 1 : 1;
+        if (run >= c.noSameLengthRun) { problems.push({ type: 'constraint', detail: `${run} consecutive sentences of the same length` }); break; }
+      }
+    }
+    if (c.concretenessRequired) {
+      for (const p of text.split(/\n\s*\n/).filter(x => x.trim())) {
+        const concrete = /\d/.test(p) || /"[^"]+"/.test(p)
+          || /\b(smell|scent|taste|texture|warm|cold|stiff|grit|salt|burnt|damp|sharp|rough)\b/i.test(p)
+          || /\b(decided|refused|chose|grabbed|slammed|signed|locked|quit|walked out|hung up)\b/i.test(p);
+        if (!concrete && (p.match(/[A-Za-z0-9']+/g) ?? []).length > 15) {
+          problems.push({ type: 'constraint', detail: 'paragraph of pure abstraction' });
+          break;
+        }
+      }
+    }
+  }
+  // rhythm variety: sentence lengths must not all sit in one band
   const lengths = sentences.map(s => s.split(/\s+/).length);
   if (lengths.length >= 3) {
     const spread = Math.max(...lengths) - Math.min(...lengths);

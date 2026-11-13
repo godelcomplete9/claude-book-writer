@@ -135,11 +135,27 @@ That experiment became this engine. Its point is to take any set of ontologies a
 
 Plain drafting gives you one voice baked at sampling temperature. The hybrid gives you interference — and interference is what reads as a person.
 
+### Pipeline plugins and skills
+
+Full automation is not one prompt that says "write an 80k book". It is a pipeline that plans first, writes in small chunks, checks itself, and rewrites. These ship as plugins (`app/src/books/plugins/`) and Jev-gated skills (`app/src/books/book-skills.mjs`) the book writer can switch on:
+
+- **Six stages** (`pipeline-outline.mjs`): premise → outline → bible → sequential chapter generation → revision → export. Work hierarchically; the outline is the highest leverage part, and the whole outline — every chapter, in order — must exist before a single word of prose (enforced by `OutlineLock`; if the model invents plot as it goes, it repeats itself by chapter 8).
+- **Premise and constraints** (`PremiseSpec`): genre, audience, length, POV, tense, tone, logline/thesis, and what the book must *not* do — fed into every later agent. Incomplete premises are refused.
+- **Book Bible** (`BookBible`): one JSON source of truth — characters with age, voice, wounds, goals, speech tics, relationships and wants-vs-said-wants; world rules, timeline, locations, key terms; for nonfiction, chapter theses plus sources. Every writer call gets the relevant slice, never the whole bible.
+- **Chapter cards**: 25–40 cards for a 75k novel (~2,500 words each), each with goal, conflict, what changes, who appears, cliffhanger, target word count. Chunked drafting: 800–1,500 words covering 2–3 beats per call, never a whole chapter.
+- **Rolling memory** (`pipeline-memory.mjs`): each chapter is auto-summarized (250–400 words) into a vector store. The next chapter retrieves the last summary, relevant character sheets, and past scenes sharing a location or subplot — plus a subplot tracker so B plots do not vanish for 10 chapters.
+- **Agent crew** (`pipeline-agents.mjs`): Architect (bible + outline, runs once), Writer (one chunk at a time), Critic (scores the checklist, flags slop and logic gaps), Continuity (names, dates, facts against the bible), de-slop Editor (cut, do not add — runs once at the end). Orchestration: Architect once, Writer+Critic per chapter until the score passes the threshold, Editor once. Rewrites are targeted: flagged paragraphs only, never a whole chapter.
+- **QA gates and two human gates**: word count within 10%, zero banned phrases, repetition below threshold, continuity pass — everything in between auto-approves on gate pass. Gate 1 approves premise plus outline; Gate 2 skims the final draft before export.
+- **Antislop measures** (`plugins/antislop.mjs`): banned vocabulary (delve, tapestry, realm, journey, unlock, empower…), banned structures ("it is worth noting", "not only X but also Y", rule-of-three lists, moralizing endings), punctuation discipline (≤1 em dash per 500 words, limited rhetorical questions, no three same-start sentences), sentence-length variance (4-word against 30-word), concreteness rule (every paragraph carries a specific noun, number, sensory detail, decision, or dialogue), generation presets (fiction 0.7–0.9 temperature, nonfiction 0.3–0.5), the detection script per chapter (banned counts, n-gram repetition, overused crutch words, dialogue/citation ratios, three-endings-in-a-row flag), a nonfiction fact pass (no statistic, quote or date without a source), and the de-slop edit.
+- **Voice DNA**: 3–5 pages of human sample text plus words you use and words you never use — the Writer's style sheet, more powerful than a banned list alone.
+
+As skills, the same measures become Mini Skills (`craftPipelineSkills()`): concreteness, banned-vocabulary, punctuation-discipline, sentence-variance, rolling-memory, continuity, de-slop, scene-structure (fiction: action → reaction → decision → consequence) or claim-structure + fact-check (nonfiction: claim → evidence → example → implication). They compose with the oscillator bank, gate through Jev like core skills, and their constraints are enforced per beat by `styleCheck`. Pass them to `BookDraftEngine` via `plugins`, and add `rollingMemory` to inject the rolling summary into every Strip.
+
 ### Tests and benchmarks
 
 ```bash
 cd new-2.42304.0/app
-npm test                     # includes books-structure, books-canon, books-drafting (Jev, lock, fatigue, plain-mode)
+npm test                     # includes books-structure, books-canon, books-drafting, books-plugins (Jev, lock, fatigue, plain-mode, pipeline, antislop)
 node benchmarks/plain-vs-hybrid.mjs   # plain vs hybrid; results in benchmarks/results.json
 ```
 
